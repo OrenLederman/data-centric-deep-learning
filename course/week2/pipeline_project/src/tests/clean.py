@@ -107,6 +107,7 @@ def clean_photo_image(path, out_dir):
   # save to folder
   name = os.path.basename(path)
   out_file = os.path.join(out_dir, name)
+  print("going to write to ", out_file)
   cv2.imwrite(out_file, gray)
 
 
@@ -118,8 +119,7 @@ if __name__ == "__main__":
   root = join(Path(__file__).resolve().parent, 'images/integration')
   raw_dir = 'digits-raw'
   out_dir = 'digits-processed'
-
   raw_paths = glob(join(root, raw_dir, '*.png'))
-
   for raw_path in raw_paths:
+    print("Image: ", raw_path)
     clean_photo_image(raw_path, join(root, out_dir))
