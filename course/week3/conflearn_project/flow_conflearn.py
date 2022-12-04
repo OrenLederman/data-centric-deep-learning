@@ -80,6 +80,8 @@ class TrainIdentifyReview(FlowSpec):
     self.trainer = trainer
     self.config = config
 
+    self.fixed_last_part = False ## added by Oren, make it easier to resume
+
     self.next(self.train_test)
 
   @step
@@ -164,6 +166,33 @@ class TrainIdentifyReview(FlowSpec):
       # Call `predict` on `Trainer` and the test data loader.
       # Convert probabilities back to numpy (make sure 1D).
       # 
+      X_train, X_test = X[train_index], X[test_index]
+      y_train, y_test = y[train_index], y[test_index]
+
+      # pylint: disable=E1101
+      X_train = torch.from_numpy(X_train).float()
+      X_test = torch.from_numpy(X_test).float()
+
+      y_train = torch.from_numpy(y_train).float()
+      y_test = torch.from_numpy(y_test).float()
+      # pylint: enable=E1101
+
+      ds_train = TensorDataset(X_train, y_train)
+      ds_test = TensorDataset(X_test, y_test)
+
+      dl_train = DataLoader(ds_train, batch_size = 32, shuffle=True)
+      dl_test = DataLoader(ds_test, batch_size = 32, shuffle=False)  # Do not shuffle!
+
+      system = SentimentClassifierSystem(self.config)
+      trainer = Trainer(max_epochs=10)
+      trainer.fit(system, dl_train)
+      
+      # pylint: disable=E1101
+      probs_ = trainer.predict(system, dataloaders=dl_test)
+      probs_ = torch.cat(probs_).squeeze(1). numpy()
+      # pylint: enable=E1101
+
+
       # Types:
       # --
       # probs_: np.array[float] (shape: |test set|)
@@ -177,6 +206,7 @@ class TrainIdentifyReview(FlowSpec):
       self.dm.dev_dataset.data,
       self.dm.test_dataset.data,
     ])
+    print(all_df.dtypes)
     all_df = all_df.reset_index(drop=True)
     # add out-of-sample probabilities to the dataframe
     all_df['prob'] = probs
@@ -207,6 +237,10 @@ class TrainIdentifyReview(FlowSpec):
     # HINT: use cleanlab. See tutorial. 
     # 
     # Our solution is one function call.
+    ranked_label_issues = find_label_issues(self.all_df.label, prob,
+     return_indices_ranked_by="self_confidence",
+    )
+
     # 
     # Types
     # --
@@ -304,10 +338,16 @@ class TrainIdentifyReview(FlowSpec):
     # 
     # Pseudocode:
     # --
-    # dm.train_dataset.data = training slice of self.all_df
-    # dm.dev_dataset.data = dev slice of self.all_df
-    # dm.test_dataset.data = test slice of self.all_df
+
+    dm.train_dataset.data = self.all_df[0:train_size]
+    dm.dev_dataset.data = self.all_df[train_size:train_size+dev_size]
+    dm.test_dataset.data = self.all_df[train_size+dev_size:]
+    assert len(dm.train_dataset.data) == train_size
+    assert len(dm.dev_dataset.data) == dev_size
+    assert len(dm.test_dataset.data) == len(self.all_df) - train_size - dev_size
+    self.fixed_last_part = True
     # # ====================================
+    assert self.fixed_last_part
 
     # start from scratch
     system = SentimentClassifierSystem(self.config)
